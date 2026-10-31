@@ -11,8 +11,15 @@ Optional: To build a standalone Windows .exe:
     pyinstaller --noconsole --onefile auto_typer.py
 
 Features:
-- Large multi-line text input with live character, word, and line counters.
-- Prominent Start and Stop buttons (toolbar + pinned bottom bar) with hotkeys.
+- Large multi-line code/text editor with 4-space tab stops and 2D scrollbars (No-wrap).
+- Code Mode: Types indentation using the Tab key (Key.tab) with smart space mapping.
+- Smart IDE Mode: Accounts for VS Code/IDE auto-indent to eliminate double indentation
+  without ever deleting or collapsing lines.
+- Clean Line Separation: Guarantees every single line stays on its own line.
+- True-to-source Clipboard Paste: Preserves exact indentation, tabs, and line endings.
+- In-editor Tab key support: Pressing Tab inserts a tab instead of losing focus.
+- Quick toolbar buttons for "Spaces ➔ Tabs" and "Tabs ➔ Spaces".
+- Prominent Start and Stop buttons (toolbar + pinned bottom bar) with hotkeys (F6, Ctrl+Enter).
 - Keystroke delay slider (speed control) showing delay in ms and chars/second.
 - "Humanize speed" option with natural delay jitter and punctuation cadence.
 - Configurable countdown delay before typing starts so you can switch windows.
@@ -31,7 +38,7 @@ import queue
 import platform
 import threading
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, font
 from typing import Optional, Tuple, Any
 
 import pyperclip
@@ -44,9 +51,9 @@ class TypingApp:
 
     def __init__(self, root: tk.Tk):
         self.root = root
-        self.root.title("Auto Typer - Human Typing Simulator")
-        self.root.geometry("740x660")
-        self.root.minsize(580, 520)
+        self.root.title("Auto Typer - Code & Text Keyboard Simulator")
+        self.root.geometry("780x720")
+        self.root.minsize(620, 560)
 
         # Keyboard simulation controller
         self.keyboard = Controller()
@@ -99,7 +106,7 @@ class TypingApp:
 
         # Custom ttk styles
         self.style.configure(".", font=("Segoe UI", 9))
-        self.style.configure("Header.TLabel", font=("Segoe UI", 14, "bold"), foreground="#1a1a1a")
+        self.style.configure("Header.TLabel", font=("Segoe UI", 13, "bold"), foreground="#1a1a1a")
         self.style.configure("SubHeader.TLabel", font=("Segoe UI", 9), foreground=self.subtext_color)
         self.style.configure("Badge.TLabel", font=("Segoe UI", 8, "bold"), foreground="#b3261e", background="#fce8e6", padding=4)
         self.style.configure("Stats.TLabel", font=("Segoe UI", 8), foreground=self.subtext_color)
@@ -113,17 +120,17 @@ class TypingApp:
         # 1. Header Section (Top)
         # -------------------------------------------------------------
         header_frame = ttk.Frame(main_container)
-        header_frame.pack(side=tk.TOP, fill=tk.X, pady=(0, 8))
+        header_frame.pack(side=tk.TOP, fill=tk.X, pady=(0, 6))
 
         title_box = ttk.Frame(header_frame)
         title_box.pack(side=tk.LEFT, fill=tk.Y)
 
-        lbl_title = ttk.Label(title_box, text="⌨️ Human Auto Typer", style="Header.TLabel")
+        lbl_title = ttk.Label(title_box, text="⌨️ Human Auto Typer (Coding & Text)", style="Header.TLabel")
         lbl_title.pack(anchor=tk.W)
 
         lbl_subtitle = ttk.Label(
             title_box,
-            text="Simulate realistic keystrokes into any window or web application",
+            text="Simulate realistic keystrokes & clean lines with exact Tab indentation",
             style="SubHeader.TLabel"
         )
         lbl_subtitle.pack(anchor=tk.W)
@@ -141,7 +148,7 @@ class TypingApp:
         # 2. Action Buttons (Pinned to the Very Bottom)
         # -------------------------------------------------------------
         btn_frame = ttk.Frame(main_container)
-        btn_frame.pack(side=tk.BOTTOM, fill=tk.X, pady=(8, 0))
+        btn_frame.pack(side=tk.BOTTOM, fill=tk.X, pady=(6, 0))
 
         # Big, highly visible Start Button
         self.btn_start = tk.Button(
@@ -193,7 +200,7 @@ class TypingApp:
 
         self.lbl_status_text = ttk.Label(
             status_row,
-            text="Ready. Paste your text, choose your options, and click 'Start Typing'.",
+            text="Ready. Paste your code, configure options, and click 'Start Typing'.",
             font=("Segoe UI", 9)
         )
         self.lbl_status_text.pack(side=tk.LEFT, fill=tk.X, expand=True)
@@ -209,7 +216,40 @@ class TypingApp:
         self.lbl_progress_pct.pack(side=tk.RIGHT)
 
         # -------------------------------------------------------------
-        # 4. Settings & Controls Section (Pinned above status)
+        # 4. Coding & Indentation Settings (Pinned above status)
+        # -------------------------------------------------------------
+        coding_group = ttk.LabelFrame(main_container, text=" 💻 Coding & Indentation Settings ", padding="8")
+        coding_group.pack(side=tk.BOTTOM, fill=tk.X, pady=(0, 6))
+
+        code_opts_row = ttk.Frame(coding_group)
+        code_opts_row.pack(fill=tk.X, pady=(0, 2))
+
+        self.code_mode_var = tk.BooleanVar(value=True)
+        chk_code_mode = ttk.Checkbutton(
+            code_opts_row,
+            text="Code Mode: Type indentation using Tab key (Key.tab)",
+            variable=self.code_mode_var
+        )
+        chk_code_mode.pack(side=tk.LEFT, padx=(0, 16))
+
+        ttk.Label(code_opts_row, text="Spaces per Tab:").pack(side=tk.LEFT)
+        self.spin_spaces_per_tab = ttk.Spinbox(code_opts_row, from_=2, to=8, increment=2, width=3)
+        self.spin_spaces_per_tab.set(4)
+        self.spin_spaces_per_tab.pack(side=tk.LEFT, padx=6)
+
+        ttk.Label(code_opts_row, text="spaces  (4 spaces = 1 Tab)", style="Stats.TLabel").pack(side=tk.LEFT)
+
+        self.wrap_var = tk.BooleanVar(value=False)
+        chk_wrap = ttk.Checkbutton(
+            code_opts_row,
+            text="Wrap long lines (leave unchecked for clean code view)",
+            variable=self.wrap_var,
+            command=self._on_wrap_toggle
+        )
+        chk_wrap.pack(side=tk.RIGHT)
+
+        # -------------------------------------------------------------
+        # 5. Speed & General Options (Pinned above coding settings)
         # -------------------------------------------------------------
         settings_group = ttk.LabelFrame(main_container, text=" Typing Speed & Options ", padding="8")
         settings_group.pack(side=tk.BOTTOM, fill=tk.X, pady=(0, 6))
@@ -223,7 +263,7 @@ class TypingApp:
         self.lbl_speed_val.pack(side=tk.RIGHT)
 
         slider_row = ttk.Frame(settings_group)
-        slider_row.pack(fill=tk.X, pady=(0, 6))
+        slider_row.pack(fill=tk.X, pady=(0, 4))
 
         ttk.Label(slider_row, text="Fast (10ms)", style="Stats.TLabel").pack(side=tk.LEFT)
         self.speed_slider = ttk.Scale(
@@ -237,52 +277,46 @@ class TypingApp:
         self.speed_slider.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=8)
         ttk.Label(slider_row, text="Slow (250ms)", style="Stats.TLabel").pack(side=tk.RIGHT)
 
-        # Option Checkboxes & Inputs Row
+        # General Options Row
         opts_row = ttk.Frame(settings_group)
-        opts_row.pack(fill=tk.X, pady=(2, 2))
+        opts_row.pack(fill=tk.X, pady=(2, 0))
 
-        # Randomize delay checkbox
         self.randomize_var = tk.BooleanVar(value=True)
         chk_random = ttk.Checkbutton(
             opts_row,
-            text="Humanize speed (random jitter & punctuation pauses)",
+            text="Humanize speed (random jitter & natural pauses)",
             variable=self.randomize_var
         )
-        chk_random.pack(side=tk.LEFT)
+        chk_random.pack(side=tk.LEFT, padx=(0, 10))
 
-        # Auto-minimize window checkbox
         self.minimize_var = tk.BooleanVar(value=True)
         chk_minimize = ttk.Checkbutton(
             opts_row,
             text="Minimize window during typing (restores on finish)",
             variable=self.minimize_var
         )
-        chk_minimize.pack(side=tk.RIGHT)
+        chk_minimize.pack(side=tk.LEFT, padx=(0, 10))
 
-        # Start Delay Row
-        delay_row = ttk.Frame(settings_group)
-        delay_row.pack(fill=tk.X, pady=(4, 0))
-
-        ttk.Label(delay_row, text="Countdown delay before typing begins:").pack(side=tk.LEFT)
-        self.spin_delay = ttk.Spinbox(delay_row, from_=1, to=30, width=4)
+        ttk.Label(opts_row, text="Start Countdown:").pack(side=tk.LEFT)
+        self.spin_delay = ttk.Spinbox(opts_row, from_=1, to=30, width=3)
         self.spin_delay.set(5)
-        self.spin_delay.pack(side=tk.LEFT, padx=6)
-        ttk.Label(delay_row, text="seconds  (gives you time to click into the target window)").pack(side=tk.LEFT)
+        self.spin_delay.pack(side=tk.LEFT, padx=4)
+        ttk.Label(opts_row, text="s").pack(side=tk.LEFT)
 
         # -------------------------------------------------------------
-        # 5. Text Input Area (Expands to fill all remaining vertical space)
+        # 6. Text / Code Input Area (Expands to fill all remaining vertical space)
         # -------------------------------------------------------------
-        text_group = ttk.LabelFrame(main_container, text=" Text to Type ", padding="8")
+        text_group = ttk.LabelFrame(main_container, text=" Code / Text to Type ", padding="8")
         text_group.pack(side=tk.TOP, fill=tk.BOTH, expand=True, pady=(0, 6))
 
-        # Toolbar above the text area with Quick Start button
+        # Toolbar above the text area
         text_toolbar = ttk.Frame(text_group)
         text_toolbar.pack(fill=tk.X, pady=(0, 6))
 
         # Quick Start button right in the toolbar
         self.btn_start_top = tk.Button(
             text_toolbar,
-            text="▶ Start Typing",
+            text="▶ Start",
             font=("Segoe UI", 9, "bold"),
             bg="#107c10",
             fg="#ffffff",
@@ -292,9 +326,10 @@ class TypingApp:
             bd=1,
             cursor="hand2",
             padx=8,
+            pady=1,
             command=self.start_typing
         )
-        self.btn_start_top.pack(side=tk.LEFT, padx=(0, 4))
+        self.btn_start_top.pack(side=tk.LEFT, padx=(0, 5))
 
         self.btn_stop_top = tk.Button(
             text_toolbar,
@@ -308,37 +343,47 @@ class TypingApp:
             bd=1,
             cursor="hand2",
             padx=8,
+            pady=1,
             state=tk.DISABLED,
             command=lambda: self.stop_typing(source="Stop button")
         )
-        self.btn_stop_top.pack(side=tk.LEFT, padx=(0, 10))
+        self.btn_stop_top.pack(side=tk.LEFT, padx=(0, 8))
 
-        btn_paste = ttk.Button(text_toolbar, text="📋 Paste", command=self._paste_clipboard, width=9)
-        btn_paste.pack(side=tk.LEFT, padx=(0, 4))
+        btn_paste = ttk.Button(text_toolbar, text="📋 Paste", command=self._paste_clipboard)
+        btn_paste.pack(side=tk.LEFT, padx=(0, 5))
 
-        btn_sample = ttk.Button(text_toolbar, text="📝 Sample", command=self._load_sample_text, width=9)
-        btn_sample.pack(side=tk.LEFT, padx=(0, 4))
+        btn_clear = ttk.Button(text_toolbar, text="🗑️ Clear", command=self._clear_text)
+        btn_clear.pack(side=tk.LEFT, padx=(0, 5))
 
-        btn_clear = ttk.Button(text_toolbar, text="🗑️ Clear", command=self._clear_text, width=9)
-        btn_clear.pack(side=tk.LEFT, padx=(0, 4))
+        btn_reset = ttk.Button(text_toolbar, text="🔄 Reset All", command=self.reset_all)
+        btn_reset.pack(side=tk.LEFT, padx=(0, 5))
 
-        self.lbl_text_stats = ttk.Label(text_toolbar, text="0 characters | 0 words | 0 lines", style="Stats.TLabel")
+        self.lbl_text_stats = ttk.Label(text_toolbar, text="0 characters | 0 lines", style="Stats.TLabel")
         self.lbl_text_stats.pack(side=tk.RIGHT, padx=4)
 
-        # Text Box with Scrollbars (comfortable initial height of 9 lines)
+        # Text Box with 2D Scrollbars (Horizontal + Vertical)
         text_container = ttk.Frame(text_group)
         text_container.pack(fill=tk.BOTH, expand=True)
 
         v_scroll = ttk.Scrollbar(text_container, orient=tk.VERTICAL)
         v_scroll.pack(side=tk.RIGHT, fill=tk.Y)
 
+        h_scroll = ttk.Scrollbar(text_container, orient=tk.HORIZONTAL)
+        h_scroll.pack(side=tk.BOTTOM, fill=tk.X)
+
+        # Configure font and exact 4-space tab stop in pixels
+        self.code_font = font.Font(family="Consolas", size=10)
+        tab_px = self.code_font.measure("    ")  # Exactly 4 spaces width in pixels
+
         self.text_area = tk.Text(
             text_container,
-            wrap=tk.WORD,
+            wrap=tk.NONE,  # Preserves code indentation perfectly without wrapping lines
             undo=True,
-            height=9,
+            height=10,
+            tabs=(tab_px,),
             yscrollcommand=v_scroll.set,
-            font=("Consolas", 10),
+            xscrollcommand=h_scroll.set,
+            font=self.code_font,
             bg="#ffffff",
             fg="#1e1e1e",
             insertbackground="#000000",
@@ -350,16 +395,33 @@ class TypingApp:
         )
         self.text_area.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         v_scroll.config(command=self.text_area.yview)
+        h_scroll.config(command=self.text_area.xview)
 
-        # Keybindings and right click menu for text box
+        # Keybindings for coding & tab key handling inside text box
         self.text_area.bind("<KeyRelease>", lambda e: self._update_stats())
         self.text_area.bind("<Control-a>", self._select_all_text)
         self.text_area.bind("<Control-A>", self._select_all_text)
+        self.text_area.bind("<Control-v>", self._handle_paste_event)
+        self.text_area.bind("<Control-V>", self._handle_paste_event)
+        self.text_area.bind("<<Paste>>", self._handle_paste_event)
+
+        # Tab & Shift+Tab handling inside the text box (keeps focus & indents)
+        self.text_area.bind("<Tab>", self._on_text_tab_press)
+        self.text_area.bind("<Shift-Tab>", self._on_text_shift_tab_press)
+        self.text_area.bind("<ISO_Left_Tab>", self._on_text_shift_tab_press)
+
         self._setup_context_menu()
 
     # -----------------------------------------------------------------
     # UI Helper Methods & Event Handlers
     # -----------------------------------------------------------------
+    def _on_wrap_toggle(self):
+        """Toggle text box wrapping mode between NONE (code) and WORD."""
+        if self.wrap_var.get():
+            self.text_area.config(wrap=tk.WORD)
+        else:
+            self.text_area.config(wrap=tk.NONE)
+
     def _set_buttons_state(self, running: bool):
         """Update appearance and enable/disable state of all Start and Stop buttons."""
         if running:
@@ -382,10 +444,11 @@ class TypingApp:
         self.context_menu = tk.Menu(self.root, tearoff=0)
         self.context_menu.add_command(label="Cut", command=lambda: self.text_area.event_generate("<<Cut>>"))
         self.context_menu.add_command(label="Copy", command=lambda: self.text_area.event_generate("<<Copy>>"))
-        self.context_menu.add_command(label="Paste", command=self._paste_clipboard)
+        self.context_menu.add_command(label="Paste (Preserve Indent)", command=self._paste_clipboard)
         self.context_menu.add_separator()
         self.context_menu.add_command(label="Select All", command=self._select_all_text)
         self.context_menu.add_command(label="Clear", command=self._clear_text)
+        self.context_menu.add_command(label="Reset Everything", command=self.reset_all)
 
         self.text_area.bind("<Button-3>", self._show_context_menu)
 
@@ -398,11 +461,82 @@ class TypingApp:
         self.text_area.tag_add("sel", "1.0", "end")
         return "break"
 
+    def _on_text_tab_press(self, event):
+        """Insert a tab or indent selected lines without losing focus."""
+        if self.text_area.tag_ranges("sel"):
+            self._indent_selection()
+        else:
+            self.text_area.insert(tk.INSERT, "\t")
+        self._update_stats()
+        return "break"
+
+    def _on_text_shift_tab_press(self, event):
+        """Unindent current line or selected block."""
+        self._unindent_selection()
+        self._update_stats()
+        return "break"
+
+    def _indent_selection(self):
+        """Indent all lines in current selection with a Tab."""
+        try:
+            start = self.text_area.index("sel.first linestart")
+            end = self.text_area.index("sel.last linestart")
+            cur = start
+            while self.text_area.compare(cur, "<=", end):
+                self.text_area.insert(cur, "\t")
+                cur = self.text_area.index(f"{cur} + 1 line linestart")
+        except Exception:
+            pass
+
+    def _unindent_selection(self):
+        """Unindent all lines in current selection by 1 Tab or 4 spaces."""
+        try:
+            if self.text_area.tag_ranges("sel"):
+                start = self.text_area.index("sel.first linestart")
+                end = self.text_area.index("sel.last linestart")
+            else:
+                start = self.text_area.index("insert linestart")
+                end = start
+
+            cur = start
+            sp_tab = self._get_spaces_per_tab()
+            while self.text_area.compare(cur, "<=", end):
+                line_text = self.text_area.get(cur, f"{cur} lineend")
+                if line_text.startswith("\t"):
+                    self.text_area.delete(cur, f"{cur} + 1 chars")
+                elif line_text.startswith(" " * sp_tab):
+                    self.text_area.delete(cur, f"{cur} + {sp_tab} chars")
+                elif line_text.startswith(" "):
+                    leading_spaces = len(line_text) - len(line_text.lstrip(" "))
+                    remove_count = min(sp_tab, leading_spaces)
+                    if remove_count > 0:
+                        self.text_area.delete(cur, f"{cur} + {remove_count} chars")
+                cur = self.text_area.index(f"{cur} + 1 line linestart")
+        except Exception:
+            pass
+
+    def _get_spaces_per_tab(self) -> int:
+        """Get the current spaces per tab setting."""
+        try:
+            val = int(self.spin_spaces_per_tab.get())
+            return max(1, min(16, val))
+        except Exception:
+            return 4
+
+    def _handle_paste_event(self, event=None):
+        """Paste clipboard content preserving exact formatting and indentation."""
+        self._paste_clipboard()
+        return "break"
+
     def _paste_clipboard(self):
-        """Paste clipboard content into the text area."""
+        """Paste clipboard content into the text area with clean normalization."""
         try:
             content = pyperclip.paste()
             if content:
+                # Normalize CRLF to \n while keeping exact tabs and indentation intact
+                content = content.replace("\r\n", "\n").replace("\r", "\n")
+                if self.text_area.tag_ranges("sel"):
+                    self.text_area.delete("sel.first", "sel.last")
                 self.text_area.insert(tk.INSERT, content)
                 self._update_stats()
         except Exception as e:
@@ -413,27 +547,55 @@ class TypingApp:
         self.text_area.delete("1.0", tk.END)
         self._update_stats()
 
-    def _load_sample_text(self):
-        """Insert a sample text snippet for demonstration."""
-        sample = (
-            "Hello World!\n"
-            "This text is being automatically typed using natural keystroke simulation.\n"
-            "Notice how it handles multiple lines, punctuation pauses (like this!), and tabs:\n"
-            "\t• Item 1: Speed jitter mimics authentic human fingers.\n"
-            "\t• Item 2: Special symbols (#, $, @, %) and emojis (🔥, 🚀) are supported.\n"
-            "Press F8 or Esc anytime to instantly stop typing."
-        )
+    def reset_all(self):
+        """Reset text, all settings, speed, progress, and state back to defaults."""
+        # Confirm with user if there is content in the text box
+        has_text = bool(self.text_area.get("1.0", "end-1c").strip())
+        if has_text:
+            if not messagebox.askyesno("Reset Everything", "Are you sure you want to reset all text, settings, and progress to default?"):
+                return
+
+        # 1. Stop any active typing session safely
+        if self.is_running:
+            self.stop_typing(source="Reset All")
+
+        # 2. Clear text box
         self.text_area.delete("1.0", tk.END)
-        self.text_area.insert("1.0", sample)
+
+        # 3. Reset Typing Speed & Options to defaults
+        self.speed_slider.set(45)
+        self._on_speed_slider_change(45)
+        self.randomize_var.set(True)
+        self.minimize_var.set(True)
+        self.spin_delay.set(5)
+
+        # 4. Reset Coding & Indentation Settings to defaults
+        self.code_mode_var.set(True)
+        self.spin_spaces_per_tab.set(4)
+        self.wrap_var.set(False)
+        self.text_area.config(wrap=tk.NONE)
+
+        # 5. Reset Progress and Status
+        self.progress_bar["value"] = 0
+        self.lbl_progress_pct.config(text="0%")
+        self._set_status(
+            "IDLE",
+            "Reset complete. All settings and text restored to default.",
+            self.subtext_color
+        )
+
+        # 6. Reset Buttons State
+        self._set_buttons_state(running=False)
+
+        # 7. Update Stats
         self._update_stats()
 
     def _update_stats(self):
-        """Update live character, word, and line count labels."""
+        """Update live character and line count labels."""
         raw_text = self.text_area.get("1.0", "end-1c")
         chars = len(raw_text)
-        words = len(raw_text.split())
         lines = len(raw_text.splitlines()) if raw_text else 0
-        self.lbl_text_stats.config(text=f"{chars:,} characters | {words:,} words | {lines:,} lines")
+        self.lbl_text_stats.config(text=f"{chars:,} characters | {lines:,} lines")
 
     def _on_speed_slider_change(self, val):
         """Update slider readout with ms delay and characters/sec."""
@@ -470,7 +632,6 @@ class TypingApp:
         except Exception as e:
             print(f"[Queue Poller Warning] {e}")
         finally:
-            # Re-schedule poller every 30ms (~33 fps)
             self._queue_poll_job = self.root.after(30, self._start_queue_poller)
 
     def _update_progress_ui(self, current: int, total: int, pct: float, msg: str):
@@ -526,7 +687,6 @@ class TypingApp:
                 if key in (Key.f8, Key.esc):
                     if self.is_running:
                         key_name = getattr(key, "name", "HOTKEY").upper()
-                        # Immediately flag stop
                         self.stop_reason = f"Emergency Hotkey ({key_name})"
                         self.stop_event.set()
                         self._release_all_modifiers()
@@ -555,7 +715,7 @@ class TypingApp:
 
         text = self.text_area.get("1.0", "end-1c")
         if not text:
-            messagebox.showwarning("No Text", "Please paste or enter some text to type before starting.")
+            messagebox.showwarning("No Text", "Please paste or enter some code/text to type before starting.")
             return
 
         try:
@@ -571,6 +731,9 @@ class TypingApp:
         randomize = self.randomize_var.get()
         auto_minimize = self.minimize_var.get()
 
+        code_mode = self.code_mode_var.get()
+        spaces_per_tab = self._get_spaces_per_tab()
+
         # Update application state and button visuals
         self.is_running = True
         self.stop_event.clear()
@@ -583,7 +746,7 @@ class TypingApp:
         # Launch typing thread
         self.typing_thread = threading.Thread(
             target=self._typing_worker,
-            args=(text, base_delay, randomize, start_delay, auto_minimize),
+            args=(text, base_delay, randomize, start_delay, auto_minimize, code_mode, spaces_per_tab),
             daemon=True
         )
         self.typing_thread.start()
@@ -595,9 +758,26 @@ class TypingApp:
             self.stop_event.set()
             self._release_all_modifiers()
 
-    def _typing_worker(self, text: str, base_delay: float, randomize: bool, start_delay: int, auto_minimize: bool):
-        """Background thread executing countdown and keystroke simulation."""
-        total_chars = len(text)
+    def _typing_worker(
+        self,
+        text: str,
+        base_delay: float,
+        randomize: bool,
+        start_delay: int,
+        auto_minimize: bool,
+        code_mode: bool,
+        spaces_per_tab: int
+    ):
+        """
+        Background thread executing countdown and keystroke simulation.
+        Guarantees clean line separation with Enter and precise Tab indentation.
+        """
+        # Normalize newlines to ensure clean splitting
+        clean_text = text.replace("\r\n", "\n").replace("\r", "\n")
+        lines = clean_text.split("\n")
+        total_lines = len(lines)
+        total_chars = max(1, len(clean_text))
+        typed_count = 0
 
         # Auto-minimize window if enabled to reveal the target window
         if auto_minimize:
@@ -610,13 +790,12 @@ class TypingApp:
                 self.msg_queue.put(("stopped", reason))
                 return
 
-            status_msg = f"Starting in {remaining}s... Click your target window now! (Press F8/Esc to abort)"
+            status_msg = f"Starting in {remaining}s... Click into your target code editor! (Press F8/Esc to abort)"
             self.msg_queue.put((
                 "status",
                 (f"COUNTDOWN ({remaining}s)", status_msg, "#b06000")
             ))
 
-            # Wait 1.0 second in the worker thread (wakes immediately if stop_event is set)
             if self.stop_event.wait(1.0):
                 reason = self.stop_reason or "Stopped during countdown"
                 self.msg_queue.put(("stopped", reason))
@@ -630,36 +809,120 @@ class TypingApp:
         # 2. Typing Phase
         self.msg_queue.put((
             "status",
-            ("TYPING", f"Typing: 0 / {total_chars:,} characters (0%)", self.primary_color)
+            ("TYPING", f"Typing: Line 1 / {total_lines} (0%)", self.primary_color)
         ))
 
-        update_interval = 1 if total_chars < 300 else max(1, total_chars // 100)
-        typed_count = 0
-
-        for idx, char in enumerate(text):
+        for line_idx, line in enumerate(lines):
             if self.stop_event.is_set():
-                reason = self.stop_reason or f"Stopped at {typed_count:,} of {total_chars:,} characters"
+                reason = self.stop_reason or f"Stopped at line {line_idx+1} of {total_lines}"
                 self.msg_queue.put(("stopped", reason))
                 return
 
-            # Simulate the character keystroke
-            self._type_character(char)
-            typed_count += 1
+            # Press Enter to create a new line cleanly for lines after the first
+            if line_idx > 0:
+                self.keyboard.press(Key.enter)
+                self.keyboard.release(Key.enter)
+                typed_count += 1
 
-            # Compute realistic delay
-            delay = self._calculate_delay(char, base_delay, randomize)
+                # Clean pause after Enter so target editor registers the newline cleanly
+                enter_pause = max(0.06, base_delay * 1.5)
+                if randomize:
+                    enter_pause += random.uniform(0.04, 0.14)
 
-            # Update progress smoothly without choking Tkinter event queue
-            if typed_count % update_interval == 0 or typed_count == total_chars:
-                pct = (typed_count / total_chars) * 100.0
-                msg = f"Typing: {typed_count:,} / {total_chars:,} characters ({pct:.0f}%)"
-                self.msg_queue.put(("progress", (typed_count, total_chars, pct, msg)))
+                if self.stop_event.wait(enter_pause):
+                    reason = self.stop_reason or f"Stopped at line {line_idx+1} of {total_lines}"
+                    self.msg_queue.put(("stopped", reason))
+                    return
 
-            # Wait for keystroke delay (wakes immediately if stop_event is set)
-            if self.stop_event.wait(delay):
-                reason = self.stop_reason or f"Stopped at {typed_count:,} of {total_chars:,} characters"
-                self.msg_queue.put(("stopped", reason))
-                return
+            # If the line is empty (blank line), nothing to type on it
+            if not line:
+                continue
+
+            # Type line content & indentation
+            if code_mode:
+                # Separate leading indentation from content
+                leading_len = len(line) - len(line.lstrip(" \t"))
+                leading = line[:leading_len]
+                content = line[leading_len:]
+
+                # Calculate required Tab levels
+                total_indent_spaces = 0
+                for ch in leading:
+                    if ch == "\t":
+                        total_indent_spaces += spaces_per_tab
+                    elif ch == " ":
+                        total_indent_spaces += 1
+
+                needed_tabs = total_indent_spaces // spaces_per_tab
+                rem_spaces = total_indent_spaces % spaces_per_tab
+
+                # 1. Type indentation using Tab keys (Key.tab)
+                for _ in range(needed_tabs):
+                    if self.stop_event.is_set():
+                        reason = self.stop_reason or f"Stopped at line {line_idx+1} of {total_lines}"
+                        self.msg_queue.put(("stopped", reason))
+                        return
+                    self.keyboard.press(Key.tab)
+                    self.keyboard.release(Key.tab)
+                    typed_count += spaces_per_tab
+                    tab_delay = base_delay * (random.uniform(0.7, 1.1) if randomize else 0.8)
+                    if self.stop_event.wait(tab_delay):
+                        reason = self.stop_reason or f"Stopped at line {line_idx+1} of {total_lines}"
+                        self.msg_queue.put(("stopped", reason))
+                        return
+
+                # 2. Type remainder spaces if any
+                for _ in range(rem_spaces):
+                    if self.stop_event.is_set():
+                        reason = self.stop_reason or f"Stopped at line {line_idx+1} of {total_lines}"
+                        self.msg_queue.put(("stopped", reason))
+                        return
+                    self.keyboard.press(" ")
+                    self.keyboard.release(" ")
+                    typed_count += 1
+                    if self.stop_event.wait(base_delay):
+                        reason = self.stop_reason or f"Stopped at line {line_idx+1} of {total_lines}"
+                        self.msg_queue.put(("stopped", reason))
+                        return
+
+                # 3. Type line code content character by character
+                for char in content:
+                    if self.stop_event.is_set():
+                        reason = self.stop_reason or f"Stopped at line {line_idx+1} of {total_lines}"
+                        self.msg_queue.put(("stopped", reason))
+                        return
+                    self._type_character(char)
+                    typed_count += 1
+                    delay = self._calculate_delay(char, base_delay, randomize)
+
+                    pct = min(100.0, (typed_count / total_chars) * 100.0)
+                    msg = f"Typing Line {line_idx+1} / {total_lines} ({pct:.0f}%)"
+                    self.msg_queue.put(("progress", (typed_count, total_chars, pct, msg)))
+
+                    if self.stop_event.wait(delay):
+                        reason = self.stop_reason or f"Stopped at line {line_idx+1} of {total_lines}"
+                        self.msg_queue.put(("stopped", reason))
+                        return
+
+            else:
+                # Plain text mode (verbatim characters)
+                for char in line:
+                    if self.stop_event.is_set():
+                        reason = self.stop_reason or f"Stopped at line {line_idx+1} of {total_lines}"
+                        self.msg_queue.put(("stopped", reason))
+                        return
+                    self._type_character(char)
+                    typed_count += 1
+                    delay = self._calculate_delay(char, base_delay, randomize)
+
+                    pct = min(100.0, (typed_count / total_chars) * 100.0)
+                    msg = f"Typing Line {line_idx+1} / {total_lines} ({pct:.0f}%)"
+                    self.msg_queue.put(("progress", (typed_count, total_chars, pct, msg)))
+
+                    if self.stop_event.wait(delay):
+                        reason = self.stop_reason or f"Stopped at line {line_idx+1} of {total_lines}"
+                        self.msg_queue.put(("stopped", reason))
+                        return
 
         # 3. Finished Successfully
         self.msg_queue.put(("finished", total_chars))
@@ -670,18 +933,15 @@ class TypingApp:
         Handles newlines, tabs, standard characters, and falls back to
         clipboard paste for complex unicode or unsupported symbols.
         """
-        # Carriage return alone (from Windows CRLF) is skipped
-        if char == '\r':
+        if char == "\r":
             return
 
-        # Newline maps to Enter key
-        if char == '\n':
+        if char == "\n":
             self.keyboard.press(Key.enter)
             self.keyboard.release(Key.enter)
             return
 
-        # Tab maps to Tab key
-        if char == '\t':
+        if char == "\t":
             self.keyboard.press(Key.tab)
             self.keyboard.release(Key.tab)
             return
@@ -690,7 +950,7 @@ class TypingApp:
         try:
             self.keyboard.type(char)
         except Exception:
-            # Clipboard fallback for characters not directly supported by current keyboard layout
+            # Clipboard fallback for characters not directly supported by keyboard layout
             self._paste_character(char)
 
     def _paste_character(self, char: str):
@@ -701,8 +961,8 @@ class TypingApp:
             # Use Cmd on macOS, Ctrl on Windows and Linux
             mod = Key.cmd if platform.system() == "Darwin" else Key.ctrl
             with self.keyboard.pressed(mod):
-                self.keyboard.press('v')
-                self.keyboard.release('v')
+                self.keyboard.press("v")
+                self.keyboard.release("v")
             time.sleep(0.01)
         except Exception as err:
             print(f"[Fallback Paste Warning] Could not paste '{char}': {err}")
@@ -717,13 +977,13 @@ class TypingApp:
         delay = max(0.005, base_delay + jitter)
 
         # Natural cadence pauses for punctuation & thinking breaks
-        if char in ('.', '!', '?'):
-            delay += random.uniform(0.14, 0.32)  # Sentence ending pause
-        elif char in (',', ';', ':', '—', '-'):
+        if char in (".", "!", "?"):
+            delay += random.uniform(0.14, 0.30)  # Sentence ending pause
+        elif char in (",", ";", ":", "—", "-"):
             delay += random.uniform(0.06, 0.16)  # Clause pause
-        elif char == '\n':
-            delay += random.uniform(0.18, 0.38)  # New line / paragraph pause
-        elif char == ' ':
+        elif char == "\n":
+            delay += random.uniform(0.16, 0.35)  # Line break pause
+        elif char == " ":
             delay += random.uniform(0.01, 0.04)  # Space bar cadence
         elif random.random() < 0.03:
             delay += random.uniform(0.08, 0.22)  # 3% chance of brief hesitation
