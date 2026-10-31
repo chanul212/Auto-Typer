@@ -24,7 +24,7 @@ Features:
 - "Humanize speed" option with natural delay jitter and punctuation cadence.
 - Configurable countdown delay before typing starts so you can switch windows.
 - Optional window auto-minimize during typing and auto-restore when finished.
-- Global emergency stop hotkey (F8 or Esc) that works even when unfocused.
+- Global emergency stop hotkey (F8) that works even when unfocused.
 - Accurate character simulation with automatic fallback to clipboard paste.
 - Multi-threaded execution with a thread-safe message queue so the GUI never freezes.
 ================================================================================
@@ -52,8 +52,8 @@ class TypingApp:
     def __init__(self, root: tk.Tk):
         self.root = root
         self.root.title("Auto Typer - Code & Text Keyboard Simulator")
-        self.root.geometry("780x720")
-        self.root.minsize(620, 560)
+        self.root.geometry("920x720")
+        self.root.minsize(720, 560)
 
         # Keyboard simulation controller
         self.keyboard = Controller()
@@ -79,7 +79,7 @@ class TypingApp:
         # Start background queue poller for thread-safe UI updates
         self._start_queue_poller()
 
-        # Start global emergency stop listener (F8 and Esc)
+        # Start global emergency stop listener (F8)
         self._start_global_hotkey_listener()
 
         # Handle window close event cleanly
@@ -138,7 +138,7 @@ class TypingApp:
         # Emergency Stop Badge in top right
         hotkey_badge = ttk.Label(
             header_frame,
-            text="Emergency Stop: F8 or ESC",
+            text="Emergency Stop: F8",
             style="Badge.TLabel",
             relief=tk.GROOVE
         )
@@ -170,7 +170,7 @@ class TypingApp:
         # Big, highly visible Stop Button
         self.btn_stop = tk.Button(
             btn_frame,
-            text="⏹  STOP TYPING  (Esc or F8)",
+            text="⏹  STOP TYPING  (F8)",
             font=("Segoe UI", 11, "bold"),
             bg="#d0d0d0",
             fg="#888888",
@@ -221,32 +221,53 @@ class TypingApp:
         coding_group = ttk.LabelFrame(main_container, text=" 💻 Coding & Indentation Settings ", padding="8")
         coding_group.pack(side=tk.BOTTOM, fill=tk.X, pady=(0, 6))
 
-        code_opts_row = ttk.Frame(coding_group)
-        code_opts_row.pack(fill=tk.X, pady=(0, 2))
+        code_opts_row1 = ttk.Frame(coding_group)
+        code_opts_row1.pack(fill=tk.X, pady=(0, 3))
 
         self.code_mode_var = tk.BooleanVar(value=True)
         chk_code_mode = ttk.Checkbutton(
-            code_opts_row,
-            text="Code Mode: Type indentation using Tab key (Key.tab)",
+            code_opts_row1,
+            text="Code Mode: Smart IDE Indentation (Optimized for VS Code, Cursor, PyCharm)",
             variable=self.code_mode_var
         )
-        chk_code_mode.pack(side=tk.LEFT, padx=(0, 16))
+        chk_code_mode.pack(side=tk.LEFT, padx=(0, 14))
 
-        ttk.Label(code_opts_row, text="Spaces per Tab:").pack(side=tk.LEFT)
-        self.spin_spaces_per_tab = ttk.Spinbox(code_opts_row, from_=2, to=8, increment=2, width=3)
-        self.spin_spaces_per_tab.set(4)
-        self.spin_spaces_per_tab.pack(side=tk.LEFT, padx=6)
-
-        ttk.Label(code_opts_row, text="spaces  (4 spaces = 1 Tab)", style="Stats.TLabel").pack(side=tk.LEFT)
+        self.dismiss_autocomplete_var = tk.BooleanVar(value=True)
+        chk_dismiss = ttk.Checkbutton(
+            code_opts_row1,
+            text="Dismiss Autocomplete (Esc before Enter prevents unwanted completions)",
+            variable=self.dismiss_autocomplete_var
+        )
+        chk_dismiss.pack(side=tk.LEFT, padx=(0, 14))
 
         self.wrap_var = tk.BooleanVar(value=False)
         chk_wrap = ttk.Checkbutton(
-            code_opts_row,
-            text="Wrap long lines (leave unchecked for clean code view)",
+            code_opts_row1,
+            text="Wrap lines",
             variable=self.wrap_var,
             command=self._on_wrap_toggle
         )
         chk_wrap.pack(side=tk.RIGHT)
+
+        code_opts_row2 = ttk.Frame(coding_group)
+        code_opts_row2.pack(fill=tk.X, pady=(2, 0))
+
+        self.use_tab_key_var = tk.BooleanVar(value=True)
+        chk_tab_key = ttk.Checkbutton(
+            code_opts_row2,
+            text="Use Tab key (Key.tab) for indenting",
+            variable=self.use_tab_key_var
+        )
+        chk_tab_key.pack(side=tk.LEFT, padx=(0, 10))
+
+        ttk.Label(code_opts_row2, text="Spaces per Tab:").pack(side=tk.LEFT)
+        self.spin_spaces_per_tab = ttk.Spinbox(code_opts_row2, from_=2, to=8, increment=2, width=3)
+        self.spin_spaces_per_tab.set(4)
+        self.spin_spaces_per_tab.pack(side=tk.LEFT, padx=4)
+
+        ttk.Label(code_opts_row2, text="spaces  (4 spaces = 1 Tab)", style="Stats.TLabel").pack(side=tk.LEFT, padx=(2, 0))
+
+        ttk.Label(code_opts_row2, text="💡 Turn Code Mode OFF for plain text/Notepad", style="Stats.TLabel").pack(side=tk.RIGHT)
 
         # -------------------------------------------------------------
         # 5. Speed & General Options (Pinned above coding settings)
@@ -351,6 +372,9 @@ class TypingApp:
 
         btn_paste = ttk.Button(text_toolbar, text="📋 Paste", command=self._paste_clipboard)
         btn_paste.pack(side=tk.LEFT, padx=(0, 5))
+
+        btn_detect = ttk.Button(text_toolbar, text="🪄 Auto-Detect Indent", command=lambda: self.auto_detect_indent(silent=False))
+        btn_detect.pack(side=tk.LEFT, padx=(0, 5))
 
         btn_clear = ttk.Button(text_toolbar, text="🗑️ Clear", command=self._clear_text)
         btn_clear.pack(side=tk.LEFT, padx=(0, 5))
@@ -515,6 +539,50 @@ class TypingApp:
         except Exception:
             pass
 
+    def _set_preset(self, spaces: int, use_tab: bool):
+        """Set language indentation preset (e.g. Python 4 spaces or JS 2 spaces)."""
+        self.spin_spaces_per_tab.set(spaces)
+        self.use_tab_key_var.set(use_tab)
+        self._set_status("PRESET", f"Applied {spaces}-space indentation preset.", self.primary_color)
+
+    def auto_detect_indent(self, silent: bool = False):
+        """Analyze code in editor and automatically configure spaces per tab."""
+        raw = self.text_area.get("1.0", "end-1c")
+        if not raw.strip():
+            if not silent:
+                messagebox.showinfo("Auto-Detect", "No code in editor to analyze. Paste your code first!")
+            return
+
+        lines = raw.splitlines()
+        space_counts = {2: 0, 4: 0}
+        tab_count = 0
+        for line in lines:
+            leading = line[:len(line) - len(line.lstrip(" \t"))]
+            if not leading:
+                continue
+            if leading.startswith("\t"):
+                tab_count += 1
+            else:
+                sp = len(leading)
+                if sp % 4 == 0:
+                    space_counts[4] += 1
+                elif sp % 2 == 0:
+                    space_counts[2] += 1
+
+        if tab_count > (space_counts[2] + space_counts[4]):
+            self.spin_spaces_per_tab.set(4)
+            self.use_tab_key_var.set(True)
+            msg = "Detected Tab indentation. Configured Tab mode."
+        elif space_counts[2] > space_counts[4]:
+            self.spin_spaces_per_tab.set(2)
+            msg = "Detected 2-space indentation (JS/Web/React). Configured 2 spaces."
+        else:
+            self.spin_spaces_per_tab.set(4)
+            msg = "Detected 4-space indentation (Python/Java/C++). Configured 4 spaces."
+
+        if not silent:
+            self._set_status("AUTO-DETECT", msg, self.success_color)
+
     def _get_spaces_per_tab(self) -> int:
         """Get the current spaces per tab setting."""
         try:
@@ -571,6 +639,8 @@ class TypingApp:
 
         # 4. Reset Coding & Indentation Settings to defaults
         self.code_mode_var.set(True)
+        self.dismiss_autocomplete_var.set(True)
+        self.use_tab_key_var.set(True)
         self.spin_spaces_per_tab.set(4)
         self.wrap_var.set(False)
         self.text_area.config(wrap=tk.NONE)
@@ -681,13 +751,12 @@ class TypingApp:
     # Emergency Stop Global Hotkey
     # -----------------------------------------------------------------
     def _start_global_hotkey_listener(self):
-        """Listen globally for F8 or Esc to halt typing immediately."""
+        """Listen globally for F8 to halt typing immediately (Esc excluded to avoid simulated key conflict)."""
         def on_press(key):
             try:
-                if key in (Key.f8, Key.esc):
+                if key == Key.f8:
                     if self.is_running:
-                        key_name = getattr(key, "name", "HOTKEY").upper()
-                        self.stop_reason = f"Emergency Hotkey ({key_name})"
+                        self.stop_reason = "Emergency Hotkey (F8)"
                         self.stop_event.set()
                         self._release_all_modifiers()
             except Exception:
@@ -732,6 +801,8 @@ class TypingApp:
         auto_minimize = self.minimize_var.get()
 
         code_mode = self.code_mode_var.get()
+        dismiss_autocomplete = self.dismiss_autocomplete_var.get()
+        use_tab_key = self.use_tab_key_var.get()
         spaces_per_tab = self._get_spaces_per_tab()
 
         # Update application state and button visuals
@@ -746,7 +817,7 @@ class TypingApp:
         # Launch typing thread
         self.typing_thread = threading.Thread(
             target=self._typing_worker,
-            args=(text, base_delay, randomize, start_delay, auto_minimize, code_mode, spaces_per_tab),
+            args=(text, base_delay, randomize, start_delay, auto_minimize, code_mode, dismiss_autocomplete, use_tab_key, spaces_per_tab),
             daemon=True
         )
         self.typing_thread.start()
@@ -758,6 +829,91 @@ class TypingApp:
             self.stop_event.set()
             self._release_all_modifiers()
 
+    @staticmethod
+    def _measure_indent_spaces(line: str, spaces_per_tab: int) -> int:
+        """Measure the leading indentation of a line in equivalent spaces."""
+        leading_len = len(line) - len(line.lstrip(" \t"))
+        leading = line[:leading_len]
+        total = 0
+        for ch in leading:
+            if ch == "\t":
+                total += spaces_per_tab
+            elif ch == " ":
+                total += 1
+        return total
+
+    @staticmethod
+    def _is_block_opener(line_text: str) -> bool:
+        """
+        Check if a code line triggers auto-indent on newline in modern IDEs.
+        Handles Python (':'), C/C++/Java/JS/TS/PHP/Rust/Go ('{', '(', '[').
+        Strips inline comments cleanly before checking.
+        """
+        stripped = line_text.strip()
+        if not stripped:
+            return False
+
+        if "#" in stripped:
+            parts = stripped.split("#", 1)
+            left = parts[0].rstrip()
+            if left:
+                double_quotes = left.count('"')
+                single_quotes = left.count("'")
+                if double_quotes % 2 == 0 and single_quotes % 2 == 0:
+                    stripped = left
+
+        if "//" in stripped:
+            parts = stripped.split("//", 1)
+            left = parts[0].rstrip()
+            if left:
+                double_quotes = left.count('"')
+                single_quotes = left.count("'")
+                if double_quotes % 2 == 0 and single_quotes % 2 == 0:
+                    stripped = left
+
+        stripped = stripped.rstrip()
+        return stripped.endswith((":", "{", "(", "["))
+
+    def _type_indent_diff(
+        self,
+        diff: int,
+        spaces_per_tab: int,
+        use_tab_key: bool,
+        base_delay: float
+    ) -> int:
+        """Type extra indentation spaces or tabs when diff > 0. Returns typed character count."""
+        typed = 0
+        if diff <= 0:
+            return typed
+
+        if use_tab_key and spaces_per_tab > 0:
+            tabs = diff // spaces_per_tab
+            rem_spaces = diff % spaces_per_tab
+            for _ in range(tabs):
+                if self.stop_event.is_set():
+                    return typed
+                self.keyboard.press(Key.tab)
+                self.keyboard.release(Key.tab)
+                typed += spaces_per_tab
+                time.sleep(max(0.015, base_delay * 0.7))
+            for _ in range(rem_spaces):
+                if self.stop_event.is_set():
+                    return typed
+                self.keyboard.press(" ")
+                self.keyboard.release(" ")
+                typed += 1
+                time.sleep(max(0.015, base_delay * 0.7))
+        else:
+            for _ in range(diff):
+                if self.stop_event.is_set():
+                    return typed
+                self.keyboard.press(" ")
+                self.keyboard.release(" ")
+                typed += 1
+                time.sleep(max(0.015, base_delay * 0.7))
+
+        return typed
+
     def _typing_worker(
         self,
         text: str,
@@ -766,20 +922,22 @@ class TypingApp:
         start_delay: int,
         auto_minimize: bool,
         code_mode: bool,
+        dismiss_autocomplete: bool,
+        use_tab_key: bool,
         spaces_per_tab: int
     ):
         """
         Background thread executing countdown and keystroke simulation.
-        Guarantees clean line separation with Enter and precise Tab indentation.
+        - Code Mode ON: Smart IDE Indentation Tracking for VS Code/IDEs eliminates double indenting.
+        - Code Mode OFF: Verbatim typing (types whatever is in the window exactly as it is).
         """
-        # Normalize newlines to ensure clean splitting
         clean_text = text.replace("\r\n", "\n").replace("\r", "\n")
         lines = clean_text.split("\n")
         total_lines = len(lines)
         total_chars = max(1, len(clean_text))
         typed_count = 0
 
-        # Auto-minimize window if enabled to reveal the target window
+        # Auto-minimize window if enabled
         if auto_minimize:
             self.msg_queue.put(("minimize", None))
 
@@ -790,7 +948,7 @@ class TypingApp:
                 self.msg_queue.put(("stopped", reason))
                 return
 
-            status_msg = f"Starting in {remaining}s... Click into your target code editor! (Press F8/Esc to abort)"
+            status_msg = f"Starting in {remaining}s... Click into your target code editor! (Press F8 to abort)"
             self.msg_queue.put((
                 "status",
                 (f"COUNTDOWN ({remaining}s)", status_msg, "#b06000")
@@ -812,100 +970,28 @@ class TypingApp:
             ("TYPING", f"Typing: Line 1 / {total_lines} (0%)", self.primary_color)
         ))
 
-        for line_idx, line in enumerate(lines):
-            if self.stop_event.is_set():
-                reason = self.stop_reason or f"Stopped at line {line_idx+1} of {total_lines}"
-                self.msg_queue.put(("stopped", reason))
-                return
-
-            # Press Enter to create a new line cleanly for lines after the first
-            if line_idx > 0:
-                self.keyboard.press(Key.enter)
-                self.keyboard.release(Key.enter)
-                typed_count += 1
-
-                # Clean pause after Enter so target editor registers the newline cleanly
-                enter_pause = max(0.06, base_delay * 1.5)
-                if randomize:
-                    enter_pause += random.uniform(0.04, 0.14)
-
-                if self.stop_event.wait(enter_pause):
+        if not code_mode:
+            # ==================================================================
+            # Plain Text / Verbatim Mode: Types exactly whatever is in window
+            # ==================================================================
+            for line_idx, line in enumerate(lines):
+                if self.stop_event.is_set():
                     reason = self.stop_reason or f"Stopped at line {line_idx+1} of {total_lines}"
                     self.msg_queue.put(("stopped", reason))
                     return
 
-            # If the line is empty (blank line), nothing to type on it
-            if not line:
-                continue
-
-            # Type line content & indentation
-            if code_mode:
-                # Separate leading indentation from content
-                leading_len = len(line) - len(line.lstrip(" \t"))
-                leading = line[:leading_len]
-                content = line[leading_len:]
-
-                # Calculate required Tab levels
-                total_indent_spaces = 0
-                for ch in leading:
-                    if ch == "\t":
-                        total_indent_spaces += spaces_per_tab
-                    elif ch == " ":
-                        total_indent_spaces += 1
-
-                needed_tabs = total_indent_spaces // spaces_per_tab
-                rem_spaces = total_indent_spaces % spaces_per_tab
-
-                # 1. Type indentation using Tab keys (Key.tab)
-                for _ in range(needed_tabs):
-                    if self.stop_event.is_set():
-                        reason = self.stop_reason or f"Stopped at line {line_idx+1} of {total_lines}"
-                        self.msg_queue.put(("stopped", reason))
-                        return
-                    self.keyboard.press(Key.tab)
-                    self.keyboard.release(Key.tab)
-                    typed_count += spaces_per_tab
-                    tab_delay = base_delay * (random.uniform(0.7, 1.1) if randomize else 0.8)
-                    if self.stop_event.wait(tab_delay):
-                        reason = self.stop_reason or f"Stopped at line {line_idx+1} of {total_lines}"
-                        self.msg_queue.put(("stopped", reason))
-                        return
-
-                # 2. Type remainder spaces if any
-                for _ in range(rem_spaces):
-                    if self.stop_event.is_set():
-                        reason = self.stop_reason or f"Stopped at line {line_idx+1} of {total_lines}"
-                        self.msg_queue.put(("stopped", reason))
-                        return
-                    self.keyboard.press(" ")
-                    self.keyboard.release(" ")
+                if line_idx > 0:
+                    self.keyboard.press(Key.enter)
+                    self.keyboard.release(Key.enter)
                     typed_count += 1
-                    if self.stop_event.wait(base_delay):
+                    enter_pause = max(0.05, base_delay * 1.3)
+                    if randomize:
+                        enter_pause += random.uniform(0.02, 0.08)
+                    if self.stop_event.wait(enter_pause):
                         reason = self.stop_reason or f"Stopped at line {line_idx+1} of {total_lines}"
                         self.msg_queue.put(("stopped", reason))
                         return
 
-                # 3. Type line code content character by character
-                for char in content:
-                    if self.stop_event.is_set():
-                        reason = self.stop_reason or f"Stopped at line {line_idx+1} of {total_lines}"
-                        self.msg_queue.put(("stopped", reason))
-                        return
-                    self._type_character(char)
-                    typed_count += 1
-                    delay = self._calculate_delay(char, base_delay, randomize)
-
-                    pct = min(100.0, (typed_count / total_chars) * 100.0)
-                    msg = f"Typing Line {line_idx+1} / {total_lines} ({pct:.0f}%)"
-                    self.msg_queue.put(("progress", (typed_count, total_chars, pct, msg)))
-
-                    if self.stop_event.wait(delay):
-                        reason = self.stop_reason or f"Stopped at line {line_idx+1} of {total_lines}"
-                        self.msg_queue.put(("stopped", reason))
-                        return
-
-            else:
-                # Plain text mode (verbatim characters)
                 for char in line:
                     if self.stop_event.is_set():
                         reason = self.stop_reason or f"Stopped at line {line_idx+1} of {total_lines}"
@@ -914,6 +1000,98 @@ class TypingApp:
                     self._type_character(char)
                     typed_count += 1
                     delay = self._calculate_delay(char, base_delay, randomize)
+                    pct = min(100.0, (typed_count / total_chars) * 100.0)
+                    msg = f"Typing Line {line_idx+1} / {total_lines} ({pct:.0f}%)"
+                    self.msg_queue.put(("progress", (typed_count, total_chars, pct, msg)))
+                    if self.stop_event.wait(delay):
+                        reason = self.stop_reason or f"Stopped at line {line_idx+1} of {total_lines}"
+                        self.msg_queue.put(("stopped", reason))
+                        return
+        else:
+            # ==================================================================
+            # Code Mode (Smart IDE Indentation Tracking for VS Code / IDEs)
+            # ==================================================================
+            current_indent = 0
+            last_block_opener = False
+
+            for line_idx, line in enumerate(lines):
+                if self.stop_event.is_set():
+                    reason = self.stop_reason or f"Stopped at line {line_idx+1} of {total_lines}"
+                    self.msg_queue.put(("stopped", reason))
+                    return
+
+                if line_idx > 0:
+                    # In IDEs (VS Code, Cursor, PyCharm), dismiss any open IntelliSense / Copilot suggestion popup
+                    if dismiss_autocomplete:
+                        self.keyboard.press(Key.esc)
+                        self.keyboard.release(Key.esc)
+                        time.sleep(0.015)
+
+                    self.keyboard.press(Key.enter)
+                    self.keyboard.release(Key.enter)
+                    typed_count += 1
+
+                    # Optimized pause after Enter so IDE language server / formatter settles cleanly
+                    enter_pause = max(0.06, base_delay * 1.3)
+                    if randomize:
+                        enter_pause += random.uniform(0.02, 0.08)
+
+                    if self.stop_event.wait(enter_pause):
+                        reason = self.stop_reason or f"Stopped at line {line_idx+1} of {total_lines}"
+                        self.msg_queue.put(("stopped", reason))
+                        return
+
+                    # In VS Code/IDEs, pressing Enter after a block opener (: or { or [) indents by 1 level
+                    if last_block_opener:
+                        current_indent += spaces_per_tab
+                        last_block_opener = False
+                    # Otherwise, the IDE retains the previous line's indentation
+
+                # Blank line
+                if not line:
+                    continue
+
+                target_indent = self._measure_indent_spaces(line, spaces_per_tab)
+                content = line.lstrip(" \t")
+
+                delta = target_indent - current_indent
+
+                if delta > 0:
+                    # Line needs more indentation than editor already has -> type difference
+                    typed_count += self._type_indent_diff(delta, spaces_per_tab, use_tab_key, base_delay)
+                    current_indent = target_indent
+                elif delta < 0:
+                    # Line unindents (e.g. after return, pass, or closing a block) -> backspace
+                    unindent = abs(delta)
+                    num_backspaces = max(1, (unindent + spaces_per_tab - 1) // spaces_per_tab)
+                    for _ in range(num_backspaces):
+                        if self.stop_event.is_set():
+                            reason = self.stop_reason or f"Stopped at line {line_idx+1} of {total_lines}"
+                            self.msg_queue.put(("stopped", reason))
+                            return
+                        self.keyboard.press(Key.backspace)
+                        self.keyboard.release(Key.backspace)
+                        backspace_delay = max(0.02, base_delay * 0.6)
+                        if self.stop_event.wait(backspace_delay):
+                            reason = self.stop_reason or f"Stopped at line {line_idx+1} of {total_lines}"
+                            self.msg_queue.put(("stopped", reason))
+                            return
+                    current_indent = target_indent
+                else:
+                    # delta == 0: Editor cursor is ALREADY at the exact target indentation!
+                    # Do not type extra spaces or tabs!
+                    pass
+
+                # Type line content
+                for char in content:
+                    if self.stop_event.is_set():
+                        reason = self.stop_reason or f"Stopped at line {line_idx+1} of {total_lines}"
+                        self.msg_queue.put(("stopped", reason))
+                        return
+
+                    self._type_character(char)
+                    typed_count += 1
+                    delay = self._calculate_delay(char, base_delay, randomize)
 
                     pct = min(100.0, (typed_count / total_chars) * 100.0)
                     msg = f"Typing Line {line_idx+1} / {total_lines} ({pct:.0f}%)"
@@ -923,6 +1101,12 @@ class TypingApp:
                         reason = self.stop_reason or f"Stopped at line {line_idx+1} of {total_lines}"
                         self.msg_queue.put(("stopped", reason))
                         return
+
+                # Record if this non-empty line opened a block for the next line
+                if self._is_block_opener(line):
+                    last_block_opener = True
+                else:
+                    last_block_opener = False
 
         # 3. Finished Successfully
         self.msg_queue.put(("finished", total_chars))

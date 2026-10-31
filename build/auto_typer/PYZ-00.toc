@@ -1,4 +1,4 @@
-('E:\\Typing App\\build\\auto_typer\\PYZ-00.pyz',
+('E:\\Auto-Typer\\build\\auto_typer\\PYZ-00.pyz',
  [('__future__',
    'C:\\Users\\Rmcdi\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\__future__.py',
    'PYMODULE'),
